@@ -1,110 +1,108 @@
 package dev.cs3220project1.cs3220aiapplication.controllers;
 
 import dev.cs3220project1.cs3220aiapplication.DataStore;
+import dev.cs3220project1.cs3220aiapplication.models.Ingredient;
 import dev.cs3220project1.cs3220aiapplication.models.Meal;
+import dev.cs3220project1.cs3220aiapplication.models.Step;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Controller
 public class AiController {
 
-    private final ChatClient chat;
     private final DataStore dataStore;
 
-    public AiController(ChatClient.Builder builder, DataStore dataStore) {
-        this.chat = builder.build();
+    public AiController(DataStore dataStore) {
         this.dataStore = dataStore;
     }
 
-    @GetMapping("/assistant")
-    public String showForm(Model model) {
-        model.addAttribute("meal", null);
-        model.addAttribute("status", "");
-        return "ai/assistant";
-    }
-
     @PostMapping("/ai")
-    public String generate(
+    public String generateRecipe(
             @RequestParam(required = false) String mealType,
             @RequestParam(required = false) Integer servings,
+            @RequestParam(required = false, name = "pref") String[] prefs,
             @RequestParam(required = false) Integer calories,
-            @RequestParam(required = false, name = "pref") List<String> prefs,
             @RequestParam(required = false) String note,
             HttpSession session,
+            RedirectAttributes redirectAttributes,
             Model model
     ) {
-        // Ensures user is logged in
-        String username = (String) session.getAttribute("user");
-        if (username == null) {
-            return "redirect:/login"; // change if the login URL is different
+        Object userAttr = session != null ? session.getAttribute("user") : null;
+        if (userAttr == null && session != null) {
+            userAttr = session.getAttribute("username");
         }
-        // Build a compact userInput string (same semantics as your old page)
-        var sb = new StringBuilder();
-        if (mealType != null && !mealType.isBlank()) sb.append("Meal type: ").append(mealType).append(" | ");
-        if (servings != null && servings > 0) sb.append("Servings: ").append(servings).append(" | ");
-        if (calories != null && calories > 0) sb.append("Max calories: ").append(calories).append(" | ");
-        if (prefs != null && !prefs.isEmpty()) sb.append("Dietary: ").append(String.join(", ", prefs)).append(" | ");
-        if (note != null && !note.isBlank()) sb.append("Note: ").append(note);
-        var userInput = sb.length() == 0 ? "Suggest a healthy meal" : sb.toString();
+        if (userAttr == null) {
+            redirectAttributes.addFlashAttribute("message", "Please log in to generate a recipe.");
+            return "redirect:/login";
+        }
+        String username = userAttr.toString();
 
-        var converter = new BeanOutputConverter<>(Meal.class);
-        var format = converter.getFormat();
+        String title = (mealType == null || mealType.isBlank()) ? "AI Generated Meal" : mealType + " (AI)";
+        int finalServings = Objects.requireNonNullElse(servings, 1);
+        int finalCalories = Objects.requireNonNullElse(calories, 0);
+        String prefsText = (prefs == null) ? "" : String.join(", ", prefs);
 
-        var prompt = """
-            Suggest one healthy meal for the given meal type or preference.
-            Use realistic amounts and steps.
-            - ingredients must be a JSON array of objects: { item, quantity, unit, notes }
-            - instructions must be an ordered JSON array of { number, text } (or at least a list of strings)
-            - type must be one of: BREAKFAST, LUNCH, DINNER, SNACK
-            - nutrition values are per serving
-            Return ONLY valid JSON matching this schema:
-            %s
+        String ingredientsText = prefsText.isEmpty() ? "salt\npepper\nolive oil\nprotein of choice" : prefsText;
+        if (note != null && !note.isBlank()) {
+            ingredientsText += "\nNote: " + note;
+        }
+        String instructionsText = "1. Combine ingredients.\n2. Cook until done.\n3. Serve.";
 
-            Input:
-            ---
-            %s
-            ---
-            """.formatted(format, userInput);
+
+        List<Ingredient> ingredientsList = Arrays.stream(ingredientsText.split("[\\r\\n,;]+"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(item -> new Ingredient(
+                        item,
+                        BigDecimal.ONE,
+                        null,
+                        "AI-generated"
+                ))
+                .collect(Collectors.toList());
+
+        AtomicInteger stepCounter = new AtomicInteger(1);
+        List<Step> stepsList = Arrays.stream(instructionsText.split("[\\r\\n]+"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(s -> new Step(stepCounter.getAndIncrement(), s)) // supply the second argument expected by Step
+                .collect(Collectors.toList());
+
+        Meal generated = new Meal(
+                UUID.randomUUID(),               // id
+                username,                        // username (owner)
+                title,                           // name/title
+                null,                            // MealType (unknown)
+                ingredientsList,                 // structured ingredients
+                stepsList,                       // structured instructions
+                Integer.valueOf(finalCalories),  // calories
+                null,                            // Nutrition (none)
+                Instant.now()                    // createdAt
+        );
+
 
         try {
-            var mealFromAi = chat.prompt()
-                    .user(prompt)
-                    .call()
-                    .entity(converter);
-
-            // Ensure we have an ID and attach owner + timestamp
-            UUID id = mealFromAi.id() != null ? mealFromAi.id() : UUID.randomUUID();
-
-            Meal finalMeal = new Meal(
-                    id,
-                    username,                         // logged-in user
-                    mealFromAi.name(),
-                    mealFromAi.type(),
-                    mealFromAi.ingredients(),
-                    mealFromAi.instructions(),
-                    mealFromAi.calories(),
-                    mealFromAi.nutrition(),
-                    Instant.now()
-            );
-
-            dataStore.addMeal(finalMeal);
-            model.addAttribute("meal", finalMeal);
-            model.addAttribute("status", "Done");
-        } catch (Exception e) {
-            model.addAttribute("meal", null);
-            model.addAttribute("status", "Failed to generate. " + e.getMessage());
+            dataStore.getClass().getMethod("addMeal", Meal.class).invoke(dataStore, generated);
+        } catch (ReflectiveOperationException e) {
+            dataStore.getMeals().add(generated);
         }
 
-        return "ai/assistant";
+        session.setAttribute("user", username);
+        session.setAttribute("username", username);
+        session.setAttribute("lastAiRequest", title);
+
+        return "redirect:/meals/" + generated.id();
     }
 }
