@@ -2,6 +2,8 @@ package dev.cs3220project1.cs3220aiapplication.entities;
 
 import dev.cs3220project1.cs3220aiapplication.models.MealType;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import java.time.Instant;
 import java.util.List;
@@ -11,15 +13,19 @@ import java.util.List;
 public class MealEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // Long PK in DB
-    private Integer id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer id; // Changed from Integer to Long to match DB BIGINT and User entity
 
+    // CAUTION: Ensure you store a UNIQUE identifier here (like email), not just firstName!
+    @NotBlank(message = "Username/Owner is required")
     @Column(nullable = false)
-    private String username;   // owner
+    private String username;
 
+    @NotBlank(message = "Meal name is required")
     @Column(nullable = false)
     private String name;
 
+    @NotNull(message = "Meal type is required")
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private MealType type;
@@ -36,9 +42,8 @@ public class MealEntity {
             name = "meal_steps",
             joinColumns = @JoinColumn(name = "meal_id")
     )
-    @OrderColumn(name = "step_number")  // JPA-managed order index
+    @OrderColumn(name = "step_number")
     private List<StepEmbeddable> instructions;
-
 
     @Column
     private Integer calories;
@@ -73,11 +78,13 @@ public class MealEntity {
         this.createdAt = createdAt;
     }
 
-    // --- Getters & setters (you can use Lombok if allowed) ---
+    // --- Getters & setters ---
 
     public Integer getId() {
         return id;
     }
+
+    // Setter for ID is generally not needed for auto-generated keys, but harmless here
 
     public String getUsername() {
         return username;

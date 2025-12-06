@@ -1,7 +1,7 @@
-@param boolean isLoggedIn
-@param String username
-@param int year
-@param String error
+@param boolean isLoggedIn = false
+@param String username = ""
+@param int year = java.time.Year.now().getValue()
+@param String error = null
 
 <!doctype html>
 <html lang="en">

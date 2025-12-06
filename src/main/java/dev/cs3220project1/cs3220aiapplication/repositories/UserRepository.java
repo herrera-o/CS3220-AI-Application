@@ -1,6 +1,6 @@
-package dev.cs3220project1.cs3220aiapplication.repository;
+package dev.cs3220project1.cs3220aiapplication.repositories;
 
-import dev.cs3220project1.cs3220aiapplication.model.User;
+import dev.cs3220project1.cs3220aiapplication.models.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 

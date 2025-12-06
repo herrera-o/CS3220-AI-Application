@@ -1,12 +1,13 @@
-package dev.cs3220project1.cs3220aiapplication.controller;
+package dev.cs3220project1.cs3220aiapplication;
 
-import dev.cs3220project1.cs3220aiapplication.model.User;
-import dev.cs3220project1.cs3220aiapplication.repository.UserRepository;
+import dev.cs3220project1.cs3220aiapplication.models.User;
+import dev.cs3220project1.cs3220aiapplication.repositories.UserRepository;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Year;
 import java.util.Optional;
 
 @Controller
@@ -16,6 +17,13 @@ public class HomeController {
 
     public HomeController(UserRepository userRepository) {
         this.userRepository = userRepository;
+    }
+
+    @GetMapping("/")
+    public String index(Model model, HttpSession session) {
+        populateCommon(model, session);
+        populateCommon(model, session);
+        return "index";
     }
 
     @GetMapping("/login")
@@ -76,5 +84,12 @@ public class HomeController {
     public String logout(HttpSession session) {
         session.invalidate();
         return "redirect:/login";
+    }
+
+    private void populateCommon(Model model, HttpSession session) {
+        boolean isLoggedIn = session != null && session.getAttribute("username") != null;
+        model.addAttribute("isLoggedIn", isLoggedIn);
+        model.addAttribute("username", isLoggedIn ? session.getAttribute("username") : "");
+        model.addAttribute("year", Year.now().getValue());
     }
 }
